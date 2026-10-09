@@ -4,6 +4,9 @@ const adbhost = require('adbhost');
 const CDP = require('chrome-remote-interface');
 const fetch = require('node-fetch');
 
+const fs = require('fs');
+const path = require('path');
+
 
 var isConnecting = false;
 const isTizen3 = tizen.systeminfo.getCapability('http://tizen.org/feature/platform.version').startsWith('3.0');
@@ -16,11 +19,12 @@ function connectToDebugger(host, port, args) {
             client.Page.enable();
 
             client.on('Runtime.executionContextCreated', m => {
-                fetch('https://cdn.jsdelivr.net/npm/@foxreis/tizentube/dist/userScript.js').then(res => res.text()).then(modFile => {
+                try {
+                    const modFile = fs.readFileSync(path.join(__dirname, '../../../service/userScript.js'), 'utf8');
                     client.Runtime.evaluate({ expression: modFile, contextId: m.context.id });
-                }).catch(e => {
-                    client.Runtime.evaluate({ expression: 'alert("Failed to request to JSDelivr CDN.")', contextId: m.context.id });
-                });
+                } catch (e) {
+                    client.Runtime.evaluate({ expression: 'alert("Failed to load local userScript.js")', contextId: m.context.id });
+                }
             });
 
             client.Page.navigate({ url: `https://youtube.com/tv?additionalDataUrl=http%3A%2F%2Flocalhost%3A8085%2Fdial%2Fapps%2FYouTube${args ? `&${args}` : ''}` });

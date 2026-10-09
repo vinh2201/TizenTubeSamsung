@@ -5,9 +5,9 @@
   "description": "TizenTube is an ad-free and sponsor-free solution for your favourite streaming website on your Tizen (Samsung) TVs.",
   "packageType": "mods",
   "websiteURL": "https://youtube.com/tv?additionalDataUrl=http%3A%2F%2Flocalhost%3A8085%2Fdial%2Fapps%2FYouTube",
-  "main": "dist/userScript.js",
+  "main": "service/scripts/userScript.js",
   "author": "Reis Can",
-  "serviceFile": "dist/service.js",
+  "serviceFile": "service/scripts/service.js",
   "keys": [
     "MediaPlayPause",
     "MediaPlay",

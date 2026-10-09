@@ -9,6 +9,8 @@ const tls = require('tls');
 const forge = require('node-forge');
 const url = require('url');
 
+const path = require('path');
+
 const proxyPort = 8101;
 
 function startServer() {
@@ -155,7 +157,14 @@ function startServer() {
                                 ''
                             );
 
-                            body = body.replace('</body>', `<script src="https://cdn.jsdelivr.net/npm/@foxreis/tizentube/dist/userScript.js?ver=${Date.now()}"></script></body>`);
+                            // ĐÃ SỬA: Đọc file local rồi chèn inline
+                            try {
+                                const scriptContent = fs.readFileSync(path.join(__dirname, '../../../service/userScript.js'), 'utf8');
+                                body = body.replace('</body>', `<script>${scriptContent}</script></body>`);
+                            } catch (err) {
+                                console.error('Không tìm thấy userScript.js ở cobaltProxyServer');
+                                body = body.replace('</body>', `</body>`);
+                            }
 
                             headers['content-length'] = Buffer.byteLength(body, 'utf8');
                             headers['connection'] = 'close';
