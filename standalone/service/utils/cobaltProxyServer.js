@@ -159,7 +159,7 @@ function startServer() {
 
                             // ĐÃ SỬA: Đọc file local rồi chèn inline
                             try {
-                                const scriptContent = fs.readFileSync(path.join(__dirname, '../../../service/userScript.js'), 'utf8');
+                                const scriptContent = fs.readFileSync(path.join(__dirname, '../../../service/scripts/userScript.js'), 'utf8');
                                 body = body.replace('</body>', `<script>${scriptContent}</script></body>`);
                             } catch (err) {
                                 console.error('Không tìm thấy userScript.js ở cobaltProxyServer');
