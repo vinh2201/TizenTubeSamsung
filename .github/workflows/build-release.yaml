@@ -23,9 +23,13 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Setup Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-java@v5
         with:
-          node-version: '24'
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Cache Gradle
+        uses: burrunan/gradle-cache-action@v3
 
       - name: Build mods (userScript.js)
         working-directory: mods
