@@ -34,14 +34,14 @@ jobs:
         working-directory: mods
         run: |
           set -euo pipefail
-          npm ci
+          npm install
           npx rollup -c
 
       - name: Build service (service.js)
         working-directory: service
         run: |
           set -euo pipefail
-          npm ci
+          npm install
           npx rollup -c
 
       - name: Build standalone service
