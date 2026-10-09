@@ -11,8 +11,13 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
+      # BƯỚC QUAN TRỌNG NHẤT: Tải mã nguồn về máy chủ GitHub Actions
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # Đã sửa working-directory thành 'mods' nơi chứa file rollup.config.js
       - name: Install modules, transpile service and build service for DIAL
-        working-directory: service
+        working-directory: mods
         run: |
           npm install
           npx rollup -c rollup.config.js
