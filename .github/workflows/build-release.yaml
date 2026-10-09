@@ -7,64 +7,124 @@ on:
     branches: 
       - main
 
+env:
+  TIZEN_STUDIO_VER: 5.6
+
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION: true
+    permissions:
+      contents: write
+      packages: write
     steps:
-      # BƯỚC QUAN TRỌNG NHẤT: Tải mã nguồn về máy chủ GitHub Actions
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24'
 
-      # Đã sửa working-directory thành 'mods' nơi chứa file rollup.config.js
-      - name: Install modules, transpile service and build service for DIAL
+      - name: Build mods (userScript.js)
         working-directory: mods
         run: |
-          npm install
-          npx rollup -c rollup.config.js
+          set -euo pipefail
+          npm ci
+          npx rollup -c
 
-      - name: Install modules, transpile service and build service
+      - name: Build service (service.js)
+        working-directory: service
+        run: |
+          set -euo pipefail
+          npm ci
+          npx rollup -c
+
+      - name: Build standalone service
         working-directory: standalone/service
         run: |
+          set -euo pipefail
           npm install
-          npm install -g @vercel/ncc https://github.com/reisxd/tizen.js/tarball/main
+          npm install -g @vercel/ncc
           npm run build
+          rm -rf node_modules transpiled
 
-      - name: Prepare Tizen Certificate
+      - name: Download Tizen Studio CLI
         run: |
-          echo "${{ secrets.TIZEN_AUTHOR_KEY }}" | base64 -d > "${GITHUB_WORKSPACE}/TizenTube-author.p12"
+          set -euo pipefail
+          curl -fL -o tizen-installer "https://download.tizen.org/sdk/Installer/tizen-studio_${TIZEN_STUDIO_VER}/web-cli_Tizen_Studio_${TIZEN_STUDIO_VER}_ubuntu-64.bin"
+          chmod +x tizen-installer
 
-      - name: Build TizenTube Cobalt
+      - name: Install Tizen Studio CLI
+        run: |
+          set -euo pipefail
+          ./tizen-installer --accept-license "${GITHUB_WORKSPACE}/tizen-studio"
+          rm ./tizen-installer
+          echo "${GITHUB_WORKSPACE}/tizen-studio/tools/ide/bin" >> $GITHUB_PATH
+
+      - name: Configure certificate profile
+        env:
+          AUTHOR_P12_B64: ${{ secrets.TIZEN_AUTHOR_KEY }}
+          AUTHOR_P12_PASSWORD: ${{ secrets.TIZEN_AUTHOR_KEY_PW }}
+        run: |
+          set -euo pipefail
+          mkdir -p "${GITHUB_WORKSPACE}/tizen-data/keystore/author"
+          mkdir -p "${GITHUB_WORKSPACE}/tizen-data/profile"
+          echo "$AUTHOR_P12_B64" | base64 -d > "${GITHUB_WORKSPACE}/tizen-data/keystore/author/author.p12"
+
+          echo "Author cert encryption before conversion:"
+          openssl pkcs12 -info -in "${GITHUB_WORKSPACE}/tizen-data/keystore/author/author.p12" -passin env:AUTHOR_P12_PASSWORD -noout 2>&1 | grep -i "pbe\|cipher\|mac" || true
+
+          # Tizen Studio's bundled Java signing tool is old and can fail to read a
+          # PKCS#12 file encrypted with the modern AES-256 cipher OpenSSL 3.x (the
+          # default everywhere since ~2021) uses by default — throwing a generic,
+          # misleading "Invalid password" even when the password is correct. Both
+          # node-forge (what tizenjs used) and modern OpenSSL read AES-256 p12s
+          # fine, so this wouldn't have surfaced until switching to Tizen Studio's
+          # own tooling. Re-encrypt with the older, broadly-compatible cipher
+          # in-place — same password, same cert/key contents, just an older wrapper.
+          openssl pkcs12 -legacy -in "${GITHUB_WORKSPACE}/tizen-data/keystore/author/author.p12" -out /tmp/author-intermediate.pem -nodes -passin env:AUTHOR_P12_PASSWORD
+          openssl pkcs12 -export -legacy -in /tmp/author-intermediate.pem -passout env:AUTHOR_P12_PASSWORD -out "${GITHUB_WORKSPACE}/tizen-data/keystore/author/author.p12" -certpbe PBE-SHA1-3DES -keypbe PBE-SHA1-3DES -macalg sha1
+          rm -f /tmp/author-intermediate.pem
+
+          echo "Author cert encryption after conversion:"
+          openssl pkcs12 -info -in "${GITHUB_WORKSPACE}/tizen-data/keystore/author/author.p12" -passin env:AUTHOR_P12_PASSWORD -noout 2>&1 | grep -i "pbe\|cipher\|mac" || true
+
+          cp .github/assets/profiles.xml "${GITHUB_WORKSPACE}/tizen-data/profile/profiles.xml"
+          python3 -c "from pathlib import Path; import os; from xml.sax.saxutils import escape; p=Path(os.environ['GITHUB_WORKSPACE'])/'tizen-data/profile/profiles.xml'; t=p.read_text(); t=t.replace('\$GITHUB_WORKSPACE', os.environ['GITHUB_WORKSPACE']).replace('\$KEY_PW', escape(os.environ['AUTHOR_P12_PASSWORD'], {'\"':'&quot;'})); p.write_text(t)"
+
+          tizen cli-config "profiles.path=${GITHUB_WORKSPACE}/tizen-data/profile/profiles.xml"
+
+      - name: Build web app
+        working-directory: standalone
+        run: >
+          tizen build-web
+          -e "service/index.js"
+          -e "service/injector.js"
+          -e "service/bootstrap.js"
+          -e "service/build-service.js"
+          -e "service/package.json"
+          -e "service/package-lock.json"
+          -e "service/node_modules"
+          -e "release"
+
+      - name: Package WGT
         working-directory: standalone
         run: |
-          mkdir release
-          tizenjs build . -t wgt -o release/TizenTubeCobalt.wgt --author "${GITHUB_WORKSPACE}/TizenTube-author.p12" --authorPwd '${{ secrets.TIZEN_AUTHOR_KEY_PW }}' -p public --ignore node_modules,/.*\.wgt$/,/userwidget/,/release/
+          set -euo pipefail
+          tizen package -t wgt -s TizenTubeStandalone -- ./
+          mkdir -p release
+          cp *.wgt release/TizenTube.wgt
 
-      - name: Change config.xml to use http://tizentube:8101 as the proxy server for Cobalt
-        working-directory: standalone/service
+      - name: Show Tizen CLI log on failure
+        if: failure()
         run: |
-          node build-service.js set-cobalt-proxy
+          LOG_PATH="${GITHUB_WORKSPACE}/tizen-studio-data/cli/logs/cli.log"
+          if [ -f "$LOG_PATH" ]; then
+            echo "--- tizen cli.log ---"
+            cat "$LOG_PATH"
+          else
+            echo "No cli.log found at $LOG_PATH"
+          fi
 
-      - name: Build TizenTube Cobalt with http://tizentube:8101 as the proxy server
-        working-directory: standalone
-        run: |
-          tizenjs build . -t wgt -o release/TizenTubeCobaltTizenTubeProxyAddress.wgt --author "${GITHUB_WORKSPACE}/TizenTube-author.p12" --authorPwd '${{ secrets.TIZEN_AUTHOR_KEY_PW }}' -p public --ignore node_modules,/.*\.wgt$/,/userwidget/,/release/
-
-      - name: Remove Cobalt flags from config.xml for Old Tizen build
-        working-directory: standalone/service
-        run: |
-          node build-service.js remove-cobalt-flags
-
-      - name: Build TizenTube For Old Tizen (without Cobalt)
-        working-directory: standalone
-        run: |
-          tizenjs build . -t wgt -o release/TizenTubeOld.wgt --author "${GITHUB_WORKSPACE}/TizenTube-author.p12" --authorPwd '${{ secrets.TIZEN_AUTHOR_KEY_PW }}' -p public --ignore node_modules,/.*\.wgt$/,/userwidget/,/release/
-
-      - name: Upload TizenTube package artifact for Old Tizen
-        uses: actions/upload-artifact@v4
-        with:
-            name: app-${{ github.sha }}
-            path: standalone/release/*
-      
       - name: Upload TizenTube Build Results
         uses: actions/upload-artifact@v4
         with:
