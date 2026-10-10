@@ -8,7 +8,7 @@ import json from '@rollup/plugin-json';
 
 export default {
     input: "userScript.js",
-    output: { file: "../service/scripts/userScript.js", format: "iife" }, 
+    output: { file: "../dist/userScript.js", format: "iife" },
     plugins: [
         json(),
         string({
