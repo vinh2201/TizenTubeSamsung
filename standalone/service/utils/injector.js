@@ -20,7 +20,7 @@ function connectToDebugger(host, port, args) {
 
             client.on('Runtime.executionContextCreated', m => {
                 try {
-                    const modFile = fs.readFileSync(path.join(__dirname, '../../../service/scripts/userScript.js'), 'utf8');
+                    const modFile = fs.readFileSync(path.join(__dirname, 'service/scripts/userScript.js'), 'utf8');
                     client.Runtime.evaluate({ expression: modFile, contextId: m.context.id });
                 } catch (e) {
                     client.Runtime.evaluate({ expression: 'alert("Failed to load local userScript.js")', contextId: m.context.id });

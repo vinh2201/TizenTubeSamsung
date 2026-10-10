@@ -142,7 +142,7 @@ app.all('*', (req, res) => {
                 return response.text().then((text) => {
                     if (req.url.indexOf('/tv') === 0 && req.url.indexOf('/tv_config') === -1) {
                         try {
-                            const scriptContent = fs.readFileSync(path.join(__dirname, '../../service/scripts/userScript.js'), 'utf8');
+                            const scriptContent = fs.readFileSync(path.join(__dirname, 'service/scripts/userScript.js'), 'utf8');
                             text += `<script>${scriptContent}</script>`;
                         } catch (err) {
                             console.error('Không tìm thấy userScript.js local');
