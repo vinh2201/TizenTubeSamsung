@@ -143,5 +143,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: TizenTube-Built
-          files: |
-            standalone/release/*
+          path: |
+            out/android-arm_gold/cobalt.apk
+          if-no-files-found: error
