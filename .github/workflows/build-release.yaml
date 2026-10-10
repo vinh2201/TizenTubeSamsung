@@ -144,5 +144,5 @@ jobs:
         with:
           name: TizenTube-Built
           path: |
-            out/android-arm_gold/cobalt.apk
+            standalone/release/*
           if-no-files-found: error
