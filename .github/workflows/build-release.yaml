@@ -104,11 +104,21 @@ jobs:
         working-directory: standalone
         run: >
           tizen build-web
+          -e "service/index.js"
+          -e "service/injector.js"
+          -e "service/bootstrap.js"
+          -e "service/build-service.js"
+          -e "service/package.json"
+          -e "service/package-lock.json"
+          -e "service/node_modules"
+          -e "release"
 
       - name: Package TizenTube Cobalt WGT
         working-directory: standalone
         run: |
           set -euo pipefail
+          # Dọn dẹp sạch sẽ node_modules và build rác trước khi đóng gói WGT
+          rm -rf service/node_modules .buildResult
           mkdir -p release
           tizen package -t wgt -s TizenTubeStandalone -- ./
           cp *.wgt release/TizenTubeCobalt.wgt
@@ -124,11 +134,21 @@ jobs:
         working-directory: standalone
         run: >
           tizen build-web
+          -e "service/index.js"
+          -e "service/injector.js"
+          -e "service/bootstrap.js"
+          -e "service/build-service.js"
+          -e "service/package.json"
+          -e "service/package-lock.json"
+          -e "service/node_modules"
+          -e "release"
 
       - name: Package Proxy WGT
         working-directory: standalone
         run: |
           set -euo pipefail
+          # Dọn dẹp sạch sẽ node_modules và build rác trước khi đóng gói WGT
+          rm -rf service/node_modules .buildResult
           tizen package -t wgt -s TizenTubeStandalone -- ./
           cp *.wgt release/TizenTubeCobaltTizenTubeProxyAddress.wgt
           rm -f *.wgt
@@ -143,11 +163,21 @@ jobs:
         working-directory: standalone
         run: >
           tizen build-web
+          -e "service/index.js"
+          -e "service/injector.js"
+          -e "service/bootstrap.js"
+          -e "service/build-service.js"
+          -e "service/package.json"
+          -e "service/package-lock.json"
+          -e "service/node_modules"
+          -e "release"
 
       - name: Package Old Tizen WGT
         working-directory: standalone
         run: |
           set -euo pipefail
+          # Dọn dẹp sạch sẽ node_modules và build rác trước khi đóng gói WGT
+          rm -rf service/node_modules .buildResult
           tizen package -t wgt -s TizenTubeStandalone -- ./
           cp *.wgt release/TizenTubeOld.wgt
           rm -f *.wgt
