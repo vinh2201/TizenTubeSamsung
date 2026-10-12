@@ -117,12 +117,13 @@ jobs:
         working-directory: standalone
         run: |
           set -euo pipefail
-          # Dọn dẹp sạch sẽ node_modules và build rác trước khi đóng gói WGT
-          rm -rf service/node_modules .buildResult
           mkdir -p release
+          rm -rf /tmp/wgt-build && mkdir -p /tmp/wgt-build
+          rsync -av --exclude='service/node_modules' --exclude='.buildResult' --exclude='release' ./ /tmp/wgt-build/
+          cd /tmp/wgt-build
           tizen package -t wgt -s TizenTubeStandalone -- ./
-          cp *.wgt release/TizenTubeCobalt.wgt
-          rm -f *.wgt
+          cp *.wgt ${GITHUB_WORKSPACE}/standalone/release/TizenTubeCobalt.wgt
+          rm -rf /tmp/wgt-build
 
       # --- BIẾN THỂ 2: TizenTube Cobalt Proxy ---
       - name: Change config.xml to use proxy server for Cobalt
@@ -147,11 +148,12 @@ jobs:
         working-directory: standalone
         run: |
           set -euo pipefail
-          # Dọn dẹp sạch sẽ node_modules và build rác trước khi đóng gói WGT
-          rm -rf service/node_modules .buildResult
+          rm -rf /tmp/wgt-build && mkdir -p /tmp/wgt-build
+          rsync -av --exclude='service/node_modules' --exclude='.buildResult' --exclude='release' ./ /tmp/wgt-build/
+          cd /tmp/wgt-build
           tizen package -t wgt -s TizenTubeStandalone -- ./
-          cp *.wgt release/TizenTubeCobaltTizenTubeProxyAddress.wgt
-          rm -f *.wgt
+          cp *.wgt ${GITHUB_WORKSPACE}/standalone/release/TizenTubeCobaltTizenTubeProxyAddress.wgt
+          rm -rf /tmp/wgt-build
 
       # --- BIẾN THỂ 3: Old Tizen (Không Cobalt) ---
       - name: Remove Cobalt flags from config.xml for Old Tizen build
@@ -176,11 +178,12 @@ jobs:
         working-directory: standalone
         run: |
           set -euo pipefail
-          # Dọn dẹp sạch sẽ node_modules và build rác trước khi đóng gói WGT
-          rm -rf service/node_modules .buildResult
+          rm -rf /tmp/wgt-build && mkdir -p /tmp/wgt-build
+          rsync -av --exclude='service/node_modules' --exclude='.buildResult' --exclude='release' ./ /tmp/wgt-build/
+          cd /tmp/wgt-build
           tizen package -t wgt -s TizenTubeStandalone -- ./
-          cp *.wgt release/TizenTubeOld.wgt
-          rm -f *.wgt
+          cp *.wgt ${GITHUB_WORKSPACE}/standalone/release/TizenTubeOld.wgt
+          rm -rf /tmp/wgt-build
 
       - name: Show Tizen CLI log on failure
         if: failure()
