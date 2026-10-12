@@ -12,8 +12,6 @@ const URL = require('url');
 const path = require('path');
 const injector = require('./utils/injector.js');
 
-const fs = require('fs');
-
 app.use((req, res, next) => {
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS, PUT, PATCH, DELETE');
@@ -141,12 +139,8 @@ app.all('*', (req, res) => {
 
                 return response.text().then((text) => {
                     if (req.url.indexOf('/tv') === 0 && req.url.indexOf('/tv_config') === -1) {
-                        try {
-                            const scriptContent = fs.readFileSync(path.join(__dirname, '../service/scripts/userScript.js'), 'utf8');
-                            text += `<script>${scriptContent}</script>`;
-                        } catch (err) {
-                            console.error('Không tìm thấy userScript.js local');
-                        }
+                        // Insert the userscript for TizenTube
+                        text += `<script src="https://cdn.jsdelivr.net/npm/@foxreis/tizentube/dist/userScript.js?ver=${Date.now()}"></script>`;
                     }
 
                     const proxyPrefix = `http://localhost:${PORT}/cors-bypass/`;
@@ -208,7 +202,7 @@ if (cobaltSetup()) {
 } else {
     // Start the DIAL server
     global.isTizenTube = true;
-    require(path.join(__dirname, '../../service/service.js'));
+    require(path.join(__dirname, '../../../dist/service.js'));
 }
 
 // To avoid issues on newer versions of Tizen.

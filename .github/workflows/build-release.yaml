@@ -23,35 +23,22 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Setup Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v4
         with:
-          node-version: '24'
+          node-version: '20'
 
-      - name: Cache Gradle
-        uses: burrunan/gradle-cache-action@v3
-
-      - name: Build mods (userScript.js)
-        working-directory: mods
-        run: |
-          set -euo pipefail
-          npm install
-          npx rollup -c
-
-      - name: Build service (service.js)
+      - name: Install modules, transpile service and build service for DIAL
         working-directory: service
         run: |
-          set -euo pipefail
           npm install
-          npx rollup -c
+          npx rollup -c rollup.config.js
 
-      - name: Build standalone service
+      - name: Install modules, transpile service and build service
         working-directory: standalone/service
         run: |
-          set -euo pipefail
           npm install
           npm install -g @vercel/ncc
           npm run build
-          rm -rf node_modules transpiled
 
       - name: Download Tizen Studio CLI
         run: |
@@ -75,12 +62,11 @@ jobs:
           mkdir -p "${GITHUB_WORKSPACE}/tizen-data/keystore/author"
           mkdir -p "${GITHUB_WORKSPACE}/tizen-data/profile"
 
-          # 1. Kiểm tra nếu không có Secret -> Tự động sinh chứng chỉ bằng OpenSSL
+          # 1. Tự động sinh chứng chỉ giả lập nếu thiếu Secret hoặc giải mã chứng chỉ thật
           if [ -z "${AUTHOR_P12_B64:-}" ]; then
             echo "⚠️ Không tìm thấy TIZEN_AUTHOR_KEY secret. Tự động khởi tạo chứng chỉ self-signed..."
             FINAL_PW="password123"
             
-            # Tạo chứng chỉ giả lập .p12 trực tiếp trên máy chủ ảo
             openssl req -x509 -newkey rsa:2048 -keyout /tmp/author.key -out /tmp/author.crt -days 3650 -nodes -subj "/CN=TizenTubeDev/O=TizenTube/C=US"
             openssl pkcs12 -export -out "${GITHUB_WORKSPACE}/tizen-data/keystore/author/author.p12" -inkey /tmp/author.key -in /tmp/author.crt -passout pass:"$FINAL_PW" -certpbe PBE-SHA1-3DES -keypbe PBE-SHA1-3DES -macalg sha1
             rm -f /tmp/author.key /tmp/author.crt
@@ -89,25 +75,22 @@ jobs:
             FINAL_PW="${AUTHOR_P12_PASSWORD}"
             echo "$AUTHOR_P12_B64" | base64 -d > "${GITHUB_WORKSPACE}/tizen-data/keystore/author/author.p12"
 
-            echo "Author cert encryption before conversion:"
-            openssl pkcs12 -info -in "${GITHUB_WORKSPACE}/tizen-data/keystore/author/author.p12" -passin pass:"$FINAL_PW" -noout 2>&1 | grep -i "pbe\|cipher\|mac" || true
-
-            # Convert sang chuẩn mã hóa cũ tương thích với Tizen Studio CLI
-            openssl pkcs12 -legacy -in "${GITHUB_WORKSPACE}/tizen-data/keystore/author/author.p12" -out /tmp/author-intermediate.pem -nodes -passin pass:"$FINAL_PW"
+            # Convert chuẩn mã hóa tương thích Tizen CLI
+            openssl pkcs12 -legacy -in "${GITHUB_WORKSPACE}/tizen-data/keystore/author/author.p12" -out /tmp/author-intermediate.pem -nodes -passin pass:"$FINAL_PW" || \
+            openssl pkcs12 -in "${GITHUB_WORKSPACE}/tizen-data/keystore/author/author.p12" -out /tmp/author-intermediate.pem -nodes -passin pass:"$FINAL_PW"
+            
             openssl pkcs12 -export -legacy -in /tmp/author-intermediate.pem -passout pass:"$FINAL_PW" -out "${GITHUB_WORKSPACE}/tizen-data/keystore/author/author.p12" -certpbe PBE-SHA1-3DES -keypbe PBE-SHA1-3DES -macalg sha1
             rm -f /tmp/author-intermediate.pem
           fi
 
-          echo "Author cert encryption active:"
-          openssl pkcs12 -info -in "${GITHUB_WORKSPACE}/tizen-data/keystore/author/author.p12" -passin pass:"$FINAL_PW" -noout 2>&1 | grep -i "pbe\|cipher\|mac" || true
-
-          # 2. Cập nhật file profiles.xml với mật khẩu (Secret hoặc mặc định)
+          # 2. Cập nhật profiles.xml
           cp .github/assets/profiles.xml "${GITHUB_WORKSPACE}/tizen-data/profile/profiles.xml"
           python3 -c "from pathlib import Path; import os; from xml.sax.saxutils import escape; p=Path(os.environ['GITHUB_WORKSPACE'])/'tizen-data/profile/profiles.xml'; t=p.read_text(); t=t.replace('\$GITHUB_WORKSPACE', os.environ['GITHUB_WORKSPACE']).replace('\$KEY_PW', escape('${FINAL_PW}', {'\"':'&quot;'})); p.write_text(t)"
 
           tizen cli-config "profiles.path=${GITHUB_WORKSPACE}/tizen-data/profile/profiles.xml"
 
-      - name: Build web app
+      # --- BIẾN THỂ 1: TizenTube Cobalt Chuẩn ---
+      - name: Build web app (Standard Cobalt)
         working-directory: standalone
         run: >
           tizen build-web
@@ -120,13 +103,68 @@ jobs:
           -e "service/node_modules"
           -e "release"
 
-      - name: Package WGT
+      - name: Package TizenTube Cobalt WGT
+        working-directory: standalone
+        run: |
+          set -euo pipefail
+          mkdir -p release
+          tizen package -t wgt -s TizenTubeStandalone -- ./
+          cp *.wgt release/TizenTubeCobalt.wgt
+          rm -f *.wgt
+
+      # --- BIẾN THỂ 2: TizenTube Cobalt Proxy ---
+      - name: Change config.xml to use proxy server for Cobalt
+        working-directory: standalone/service
+        run: |
+          node build-service.js set-cobalt-proxy
+
+      - name: Build web app (Proxy Variant)
+        working-directory: standalone
+        run: >
+          tizen build-web
+          -e "service/index.js"
+          -e "service/injector.js"
+          -e "service/bootstrap.js"
+          -e "service/build-service.js"
+          -e "service/package.json"
+          -e "service/package-lock.json"
+          -e "service/node_modules"
+          -e "release"
+
+      - name: Package Proxy WGT
         working-directory: standalone
         run: |
           set -euo pipefail
           tizen package -t wgt -s TizenTubeStandalone -- ./
-          mkdir -p release
-          cp *.wgt release/TizenTube.wgt
+          cp *.wgt release/TizenTubeCobaltTizenTubeProxyAddress.wgt
+          rm -f *.wgt
+
+      # --- BIẾN THỂ 3: Old Tizen (Không Cobalt) ---
+      - name: Remove Cobalt flags from config.xml for Old Tizen build
+        working-directory: standalone/service
+        run: |
+          node build-service.js remove-cobalt-flags
+
+      - name: Build web app (Old Tizen Variant)
+        working-directory: standalone
+        run: >
+          tizen build-web
+          -e "service/index.js"
+          -e "service/injector.js"
+          -e "service/bootstrap.js"
+          -e "service/build-service.js"
+          -e "service/package.json"
+          -e "service/package-lock.json"
+          -e "service/node_modules"
+          -e "release"
+
+      - name: Package Old Tizen WGT
+        working-directory: standalone
+        run: |
+          set -euo pipefail
+          tizen package -t wgt -s TizenTubeStandalone -- ./
+          cp *.wgt release/TizenTubeOld.wgt
+          rm -f *.wgt
 
       - name: Show Tizen CLI log on failure
         if: failure()
@@ -139,10 +177,9 @@ jobs:
             echo "No cli.log found at $LOG_PATH"
           fi
 
-      - name: Upload TizenTube Build Results
+      - name: Upload TizenTube package artifact
         uses: actions/upload-artifact@v4
         with:
           name: TizenTube-Built
-          path: |
-            standalone/release/*
+          path: standalone/release/*
           if-no-files-found: error
