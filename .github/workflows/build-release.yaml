@@ -104,14 +104,6 @@ jobs:
         working-directory: standalone
         run: >
           tizen build-web
-          -e "service/index.js"
-          -e "service/injector.js"
-          -e "service/bootstrap.js"
-          -e "service/build-service.js"
-          -e "service/package.json"
-          -e "service/package-lock.json"
-          -e "service/node_modules"
-          -e "release"
 
       - name: Package TizenTube Cobalt WGT
         working-directory: standalone
@@ -132,14 +124,6 @@ jobs:
         working-directory: standalone
         run: >
           tizen build-web
-          -e "service/index.js"
-          -e "service/injector.js"
-          -e "service/bootstrap.js"
-          -e "service/build-service.js"
-          -e "service/package.json"
-          -e "service/package-lock.json"
-          -e "service/node_modules"
-          -e "release"
 
       - name: Package Proxy WGT
         working-directory: standalone
@@ -159,14 +143,6 @@ jobs:
         working-directory: standalone
         run: >
           tizen build-web
-          -e "service/index.js"
-          -e "service/injector.js"
-          -e "service/bootstrap.js"
-          -e "service/build-service.js"
-          -e "service/package.json"
-          -e "service/package-lock.json"
-          -e "service/node_modules"
-          -e "release"
 
       - name: Package Old Tizen WGT
         working-directory: standalone
