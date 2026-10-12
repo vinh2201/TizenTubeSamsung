@@ -13,16 +13,25 @@ const path = require('path');
 const fs = require('fs');
 const injector = require('./utils/injector.js');
 
-// Đọc nội dung userScript cục bộ để vượt rào CSP và không phụ thuộc mạng ngoài[cite: 4]
+// Tự động quét tìm userScript.js cục bộ chuẩn xác theo cấu trúc WGT
 let userScriptContent = '';
-try {
-    userScriptContent = fs.readFileSync(path.join(__dirname, 'scripts/userScript.js'), 'utf8');
-} catch (e) {
+const possiblePathsIndex = [
+    path.join(__dirname, 'scripts/userScript.js'),          // Khi đóng gói trong WGT (service/scripts/userScript.js)
+    path.join(__dirname, '../service/scripts/userScript.js'),  // Từ standalone/service
+    path.join(__dirname, '../../service/scripts/userScript.js'), // Từ root repo xuống
+    path.join(__dirname, '../../../service/scripts/userScript.js')
+];
+for (const p of possiblePathsIndex) {
     try {
-        userScriptContent = fs.readFileSync(path.join(__dirname, '../../service/scripts/userScript.js'), 'utf8');
-    } catch (err) {
-        console.error('⚠️ Không tìm thấy file userScript.js cục bộ:', err);
-    }
+        if (fs.existsSync(p)) {
+            userScriptContent = fs.readFileSync(p, 'utf8');
+            break;
+        }
+    } catch (e) {}
+}
+
+if (!userScriptContent) {
+    console.error('⚠️ Cảnh báo nghiêm trọng: Không tìm thấy file userScript.js cục bộ!');
 }
 
 app.use((req, res, next) => {
@@ -152,11 +161,9 @@ app.all('*', (req, res) => {
 
                 return response.text().then((text) => {
                     if (req.url.indexOf('/tv') === 0 && req.url.indexOf('/tv_config') === -1) {
-                        // Nhúng trực tiếp nội dung userScript cục bộ để vượt rào CSP tuyệt đối[cite: 4]
+                        // Nhúng trực tiếp nội dung userScript cục bộ, loại bỏ hoàn toàn CDN
                         if (userScriptContent) {
                             text += `<script>${userScriptContent}</script>`;
-                        } else {
-                            text += `<script src="https://cdn.jsdelivr.net/npm/@foxreis/tizentube/dist/userScript.js?ver=${Date.now()}"></script>`;
                         }
                     }
 

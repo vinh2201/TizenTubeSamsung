@@ -9,14 +9,21 @@ const path = require('path');
 var isConnecting = false;
 const isTizen3 = tizen.systeminfo.getCapability('http://tizen.org/feature/platform.version').startsWith('3.0');
 
-// Đọc nội dung userScript cục bộ cho CDP injector[cite: 5]
+// Tự động quét tìm userScript.js cục bộ cho CDP injector
 let userScriptContent = '';
-try {
-    userScriptContent = fs.readFileSync(path.join(__dirname, '../scripts/userScript.js'), 'utf8');
-} catch (e) {
+const possiblePathsInjector = [
+    path.join(__dirname, '../scripts/userScript.js'),          // Từ service/utils/ ra service/scripts/
+    path.join(__dirname, '../../service/scripts/userScript.js'), // Từ standalone/service/utils/
+    path.join(__dirname, '../../../service/scripts/userScript.js'),
+    path.join(__dirname, 'scripts/userScript.js')
+];
+for (const p of possiblePathsInjector) {
     try {
-        userScriptContent = fs.readFileSync(path.join(__dirname, '../../../service/scripts/userScript.js'), 'utf8');
-    } catch (err) {}
+        if (fs.existsSync(p)) {
+            userScriptContent = fs.readFileSync(p, 'utf8');
+            break;
+        }
+    } catch (e) {}
 }
 
 function connectToDebugger(host, port, args) {
@@ -30,11 +37,7 @@ function connectToDebugger(host, port, args) {
                 if (userScriptContent) {
                     client.Runtime.evaluate({ expression: userScriptContent, contextId: m.context.id });
                 } else {
-                    fetch('https://cdn.jsdelivr.net/npm/@foxreis/tizentube/dist/userScript.js').then(res => res.text()).then(modFile => {
-                        client.Runtime.evaluate({ expression: modFile, contextId: m.context.id });
-                    }).catch(e => {
-                        client.Runtime.evaluate({ expression: 'alert("Failed to request to JSDelivr CDN.")', contextId: m.context.id });
-                    });
+                    client.Runtime.evaluate({ expression: 'console.error("❌ Không tìm thấy file userScript.js cục bộ để inject!")', contextId: m.context.id });
                 }
             });
 

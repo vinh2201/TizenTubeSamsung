@@ -13,14 +13,21 @@ const url = require('url');
 const proxyPort = 8101;
 
 function startServer() {
-    // Đọc sẵn userScript cục bộ để phục vụ MITM proxy[cite: 6]
+    // Tự động quét tìm userScript.js cục bộ phục vụ MITM proxy
     let userScriptContent = '';
-    try {
-        userScriptContent = fs.readFileSync(path.join(__dirname, '../scripts/userScript.js'), 'utf8');
-    } catch (e) {
+    const possiblePathsProxy = [
+        path.join(__dirname, '../scripts/userScript.js'),          // Từ service/utils/ ra service/scripts/
+        path.join(__dirname, '../../service/scripts/userScript.js'), // Từ standalone/service/utils/
+        path.join(__dirname, '../../../service/scripts/userScript.js'),
+        path.join(__dirname, 'scripts/userScript.js')
+    ];
+    for (const p of possiblePathsProxy) {
         try {
-            userScriptContent = fs.readFileSync(path.join(__dirname, '../../../service/scripts/userScript.js'), 'utf8');
-        } catch (err) {}
+            if (fs.existsSync(p)) {
+                userScriptContent = fs.readFileSync(p, 'utf8');
+                break;
+            }
+        } catch (e) {}
     }
 
     const caCertificate = forge.pki.certificateFromPem(
@@ -166,11 +173,8 @@ function startServer() {
                                 ''
                             );
 
-                            // Bơm trực tiếp userScript local vào thân trang[cite: 6]
-                            const scriptTag = userScriptContent 
-                                ? `<script>${userScriptContent}</script>` 
-                                : `<script src="https://cdn.jsdelivr.net/npm/@foxreis/tizentube/dist/userScript.js?ver=${Date.now()}"></script>`;
-
+                            // Bơm trực tiếp userScript local tuyệt đối, không dùng CDN
+                            const scriptTag = userScriptContent ? `<script>${userScriptContent}</script>` : '';
                             body = body.replace('</body>', `${scriptTag}</body>`);
 
                             headers['content-length'] = Buffer.byteLength(body, 'utf8');
