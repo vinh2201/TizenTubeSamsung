@@ -10,7 +10,20 @@ const cobaltSetup = require('./utils/cobaltSetup.js');
 const startServer = require('./utils/cobaltProxyServer.js');
 const URL = require('url');
 const path = require('path');
+const fs = require('fs');
 const injector = require('./utils/injector.js');
+
+// Đọc nội dung userScript cục bộ để vượt rào CSP và không phụ thuộc mạng ngoài[cite: 4]
+let userScriptContent = '';
+try {
+    userScriptContent = fs.readFileSync(path.join(__dirname, 'scripts/userScript.js'), 'utf8');
+} catch (e) {
+    try {
+        userScriptContent = fs.readFileSync(path.join(__dirname, '../../service/scripts/userScript.js'), 'utf8');
+    } catch (err) {
+        console.error('⚠️ Không tìm thấy file userScript.js cục bộ:', err);
+    }
+}
 
 app.use((req, res, next) => {
     res.setHeader('Access-Control-Allow-Origin', '*');
@@ -139,8 +152,12 @@ app.all('*', (req, res) => {
 
                 return response.text().then((text) => {
                     if (req.url.indexOf('/tv') === 0 && req.url.indexOf('/tv_config') === -1) {
-                        // Insert the userscript for TizenTube
-                        text += `<script src="https://cdn.jsdelivr.net/npm/@foxreis/tizentube/dist/userScript.js?ver=${Date.now()}"></script>`;
+                        // Nhúng trực tiếp nội dung userScript cục bộ để vượt rào CSP tuyệt đối[cite: 4]
+                        if (userScriptContent) {
+                            text += `<script>${userScriptContent}</script>`;
+                        } else {
+                            text += `<script src="https://cdn.jsdelivr.net/npm/@foxreis/tizentube/dist/userScript.js?ver=${Date.now()}"></script>`;
+                        }
                     }
 
                     const proxyPrefix = `http://localhost:${PORT}/cors-bypass/`;

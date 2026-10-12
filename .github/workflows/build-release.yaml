@@ -1,6 +1,5 @@
 name: Build TizenTube Standalone and Release
 
-
 on:
   workflow_dispatch:
   push:
@@ -26,6 +25,17 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20'
+
+      - name: Copy local userScript into standalone service
+        run: |
+          mkdir -p standalone/service/scripts
+          if [ -f service/scripts/userScript.js ]; then
+            cp service/scripts/userScript.js standalone/service/scripts/userScript.js
+            echo "✅ Đã copy thành công userScript.js vào thư mục standalone/service/scripts/"
+          else
+            echo "⚠️ Cảnh báo: Không tìm thấy file service/scripts/userScript.js trong repo!"
+            exit 1
+          fi
 
       - name: Install modules, transpile service and build service for DIAL
         working-directory: service

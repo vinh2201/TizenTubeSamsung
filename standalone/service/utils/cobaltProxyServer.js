@@ -1,6 +1,7 @@
 "use strict";
 
 const fs = require('fs');
+const path = require('path');
 const http = require('http');
 const ogHttps = require('https');
 const https = require('./https.js');
@@ -12,6 +13,16 @@ const url = require('url');
 const proxyPort = 8101;
 
 function startServer() {
+    // Đọc sẵn userScript cục bộ để phục vụ MITM proxy[cite: 6]
+    let userScriptContent = '';
+    try {
+        userScriptContent = fs.readFileSync(path.join(__dirname, '../scripts/userScript.js'), 'utf8');
+    } catch (e) {
+        try {
+            userScriptContent = fs.readFileSync(path.join(__dirname, '../../../service/scripts/userScript.js'), 'utf8');
+        } catch (err) {}
+    }
+
     const caCertificate = forge.pki.certificateFromPem(
         fs.readFileSync('/home/owner/share/tizentube-ca.crt', 'utf8')
     );
@@ -155,7 +166,12 @@ function startServer() {
                                 ''
                             );
 
-                            body = body.replace('</body>', `<script src="https://cdn.jsdelivr.net/npm/@foxreis/tizentube/dist/userScript.js?ver=${Date.now()}"></script></body>`);
+                            // Bơm trực tiếp userScript local vào thân trang[cite: 6]
+                            const scriptTag = userScriptContent 
+                                ? `<script>${userScriptContent}</script>` 
+                                : `<script src="https://cdn.jsdelivr.net/npm/@foxreis/tizentube/dist/userScript.js?ver=${Date.now()}"></script>`;
+
+                            body = body.replace('</body>', `${scriptTag}</body>`);
 
                             headers['content-length'] = Buffer.byteLength(body, 'utf8');
                             headers['connection'] = 'close';
