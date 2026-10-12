@@ -29,7 +29,6 @@ jobs:
       - name: Copy local userScript into standalone service
         run: |
           mkdir -p standalone/service/scripts
-          mkdir -p dist
           if [ -f service/scripts/userScript.js ]; then
             cp service/scripts/userScript.js standalone/service/scripts/userScript.js
             echo "✅ Đã copy thành công userScript.js vào thư mục standalone/service/scripts/"
