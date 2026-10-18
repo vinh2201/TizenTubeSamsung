@@ -11,14 +11,7 @@ env:
 
 jobs:
   build:
-    name: Build and Sign TizenTube Standalone
-    runs-on: ubuntu-24.04
-    env:
-      ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION: true
-    permissions:
-      contents: write
-      packages: write
-
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -39,6 +32,9 @@ jobs:
             exit 1
           fi
 
+      # ---------------------------------------------------------------
+      # [Từ bản FORK] Tải và cài Tizen Studio CLI
+      # ---------------------------------------------------------------
       - name: Download and Install Tizen Studio CLI
         run: |
           set -euo pipefail
@@ -49,6 +45,13 @@ jobs:
           echo "${GITHUB_WORKSPACE}/tizen-studio/tools/ide/bin" >> $GITHUB_PATH
           export PATH="${GITHUB_WORKSPACE}/tizen-studio/tools/ide/bin:$PATH"
 
+      # ---------------------------------------------------------------
+      # [Từ bản FORK] Chuẩn bị chứng chỉ + profile ký của Tizen Studio.
+      # Thêm so với FORK:
+      #   - nếu thiếu secret TIZEN_AUTHOR_KEY nhưng repo có sẵn TizenTube-author.p12
+      #     (như bản ORIGINAL vẫn đang dùng) thì dùng file đó, chỉ khi không có cả hai mới tự sinh chứng chỉ tạm
+      #   - xuất mật khẩu ra TIZEN_AUTHOR_PW để các bước build tizenjs dùng chung đúng chứng chỉ này
+      # ---------------------------------------------------------------
       - name: Configure Certificate and Profile
         env:
           AUTHOR_P12_B64: ${{ secrets.TIZEN_AUTHOR_KEY }}
@@ -58,27 +61,43 @@ jobs:
           mkdir -p "${GITHUB_WORKSPACE}/tizen-data/keystore/author"
           mkdir -p "${GITHUB_WORKSPACE}/tizen-data/profile"
 
-          # 1. Tự sinh chứng chỉ tạm thời nếu thiếu Secret hoặc giải mã chứng chỉ thật từ Secret[cite: 19]
-          if [ -z "${AUTHOR_P12_B64:-}" ]; then
-            echo "⚠️ Không tìm thấy TIZEN_AUTHOR_KEY secret. Khởi tạo chứng chỉ self-signed tạm thời..."
-            FINAL_PW="password123"
-            openssl req -x509 -newkey rsa:2048 -keyout /tmp/author.key -out /tmp/author.crt -days 3650 -nodes -subj "/CN=TizenTubeDev/O=TizenTube/C=US"
-            openssl pkcs12 -export -out "${GITHUB_WORKSPACE}/tizen-data/keystore/author/author.p12" -inkey /tmp/author.key -in /tmp/author.crt -passout pass:"$FINAL_PW" -certpbe PBE-SHA1-3DES -keypbe PBE-SHA1-3DES -macalg sha1
-            rm -f /tmp/author.key /tmp/author.crt
-          else
+          KEYSTORE="${GITHUB_WORKSPACE}/tizen-data/keystore/author/author.p12"
+          REPO_P12="${GITHUB_WORKSPACE}/TizenTube-author.p12"
+          NEED_CONVERT=0
+
+          # 1. Giải mã chứng chỉ thật từ Secret, hoặc dùng p12 có sẵn trong repo, hoặc tự sinh chứng chỉ tạm thời
+          if [ -n "${AUTHOR_P12_B64:-}" ]; then
             echo "✅ Đã tìm thấy TIZEN_AUTHOR_KEY secret. Đang giải mã..."
             FINAL_PW="${AUTHOR_P12_PASSWORD}"
-            echo "$AUTHOR_P12_B64" | base64 -d > "${GITHUB_WORKSPACE}/tizen-data/keystore/author/author.p12"
+            echo "$AUTHOR_P12_B64" | base64 -d > "$KEYSTORE"
+            NEED_CONVERT=1
+          elif [ -f "$REPO_P12" ]; then
+            echo "✅ Không có TIZEN_AUTHOR_KEY secret, dùng TizenTube-author.p12 có sẵn trong repo..."
+            FINAL_PW="${AUTHOR_P12_PASSWORD}"
+            cp "$REPO_P12" "$KEYSTORE"
+            NEED_CONVERT=1
+          else
+            echo "⚠️ Không tìm thấy TIZEN_AUTHOR_KEY secret lẫn TizenTube-author.p12. Khởi tạo chứng chỉ self-signed tạm thời..."
+            FINAL_PW="password123"
+            openssl req -x509 -newkey rsa:2048 -keyout /tmp/author.key -out /tmp/author.crt -days 3650 -nodes -subj "/CN=TizenTubeDev/O=TizenTube/C=US"
+            openssl pkcs12 -export -out "$KEYSTORE" -inkey /tmp/author.key -in /tmp/author.crt -passout pass:"$FINAL_PW" -certpbe PBE-SHA1-3DES -keypbe PBE-SHA1-3DES -macalg sha1
+            rm -f /tmp/author.key /tmp/author.crt
+          fi
 
-            # Convert chuẩn mã hóa tương thích tuyệt đối với Tizen CLI[cite: 19]
-            openssl pkcs12 -legacy -in "${GITHUB_WORKSPACE}/tizen-data/keystore/author/author.p12" -out /tmp/author-intermediate.pem -nodes -passin pass:"$FINAL_PW" || \
-            openssl pkcs12 -in "${GITHUB_WORKSPACE}/tizen-data/keystore/author/author.p12" -out /tmp/author-intermediate.pem -nodes -passin pass:"$FINAL_PW"
-            
-            openssl pkcs12 -export -legacy -in /tmp/author-intermediate.pem -passout pass:"$FINAL_PW" -out "${GITHUB_WORKSPACE}/tizen-data/keystore/author/author.p12" -certpbe PBE-SHA1-3DES -keypbe PBE-SHA1-3DES -macalg sha1
+          if [ "$NEED_CONVERT" = "1" ]; then
+            # Convert chuẩn mã hóa tương thích tuyệt đối với Tizen CLI
+            openssl pkcs12 -legacy -in "$KEYSTORE" -out /tmp/author-intermediate.pem -nodes -passin pass:"$FINAL_PW" || \
+            openssl pkcs12 -in "$KEYSTORE" -out /tmp/author-intermediate.pem -nodes -passin pass:"$FINAL_PW"
+
+            openssl pkcs12 -export -legacy -in /tmp/author-intermediate.pem -passout pass:"$FINAL_PW" -out "$KEYSTORE" -certpbe PBE-SHA1-3DES -keypbe PBE-SHA1-3DES -macalg sha1
             rm -f /tmp/author-intermediate.pem
           fi
 
-          # 2. Tạo trực tiếp file profiles.xml chuẩn để cấu hình ký chứng chỉ[cite: 19]
+          # Chia sẻ mật khẩu cho các bước sau (được che trong log)
+          echo "::add-mask::${FINAL_PW}"
+          echo "TIZEN_AUTHOR_PW=${FINAL_PW}" >> "$GITHUB_ENV"
+
+          # 2. Tạo trực tiếp file profiles.xml chuẩn để cấu hình ký chứng chỉ
           cat << EOF > "${GITHUB_WORKSPACE}/tizen-data/profile/profiles.xml"
           <?xml version="1.0" encoding="UTF-8" standalone="no"?>
           <profiles active="TizenTubeStandalone" version="3.1">
@@ -112,56 +131,111 @@ jobs:
         working-directory: standalone/service
         run: |
           npm install
-          npm install -g @vercel/ncc
+          npm install -g @vercel/ncc https://github.com/reisxd/tizen.js/tarball/main
           npm run build
 
-      - name: Build TizenTube Cobalt (Variant 1)
+      # tizenjs vẫn cần file p12 ở gốc workspace: lấy đúng chứng chỉ vừa cấu hình ở trên
+      - name: Prepare Tizen Certificate
+        run: |
+          cp "${GITHUB_WORKSPACE}/tizen-data/keystore/author/author.p12" "${GITHUB_WORKSPACE}/TizenTube-author.p12"
+
+      # Các bước build tizenjs bên dưới giữ nguyên như bản ORIGINAL,
+      # chỉ thay '${{ secrets.TIZEN_AUTHOR_KEY_PW }}' bằng "${TIZEN_AUTHOR_PW}" (mật khẩu của chứng chỉ ở trên)
+      - name: Build TizenTube Cobalt
         working-directory: standalone
         run: |
-          mkdir -p release
-          tizen build-web -e "service/index.js" -e "service/injector.js" -e "service/bootstrap.js" -e "service/build-service.js" -e "service/package.json" -e "service/package-lock.json" -e "service/node_modules" -e "release"
-          rm -rf /tmp/wgt-build && mkdir -p /tmp/wgt-build
-          rsync -av --exclude='service/node_modules' --exclude='.buildResult' --exclude='release' ./ /tmp/wgt-build/
-          cd /tmp/wgt-build
-          tizen package -t wgt -s TizenTubeStandalone -- ./
-          cp *.wgt ${GITHUB_WORKSPACE}/standalone/release/TizenTubeCobalt.wgt
-          rm -rf /tmp/wgt-build
+          mkdir release
+          tizenjs build . -t wgt -o release/TizenTubeCobalt.wgt --author "${GITHUB_WORKSPACE}/TizenTube-author.p12" --authorPwd "${TIZEN_AUTHOR_PW}" -p public --ignore node_modules,/.*\.wgt$/,/userwidget/,/release/
 
-      - name: Change config.xml to use proxy server for Cobalt
+      - name: Change config.xml to use http://tizentube:8101 as the proxy server for Cobalt
         working-directory: standalone/service
         run: |
           node build-service.js set-cobalt-proxy
 
-      - name: Build TizenTube Cobalt with Proxy Address (Variant 2)
+      - name: Build TizenTube Cobalt with http://tizentube:8101 as the proxy server
         working-directory: standalone
         run: |
-          tizen build-web -e "service/index.js" -e "service/injector.js" -e "service/bootstrap.js" -e "service/build-service.js" -e "service/package.json" -e "service/package-lock.json" -e "service/node_modules" -e "release"
-          rm -rf /tmp/wgt-build && mkdir -p /tmp/wgt-build
-          rsync -av --exclude='service/node_modules' --exclude='.buildResult' --exclude='release' ./ /tmp/wgt-build/
-          cd /tmp/wgt-build
-          tizen package -t wgt -s TizenTubeStandalone -- ./
-          cp *.wgt ${GITHUB_WORKSPACE}/standalone/release/TizenTubeCobaltTizenTubeProxyAddress.wgt
-          rm -rf /tmp/wgt-build
+          tizenjs build . -t wgt -o release/TizenTubeCobaltTizenTubeProxyAddress.wgt --author "${GITHUB_WORKSPACE}/TizenTube-author.p12" --authorPwd "${TIZEN_AUTHOR_PW}" -p public --ignore node_modules,/.*\.wgt$/,/userwidget/,/release/
 
       - name: Remove Cobalt flags from config.xml for Old Tizen build
         working-directory: standalone/service
         run: |
           node build-service.js remove-cobalt-flags
 
-      - name: Build TizenTube For Old Tizen (Variant 3)
+      - name: Build TizenTube For Old Tizen (without Cobalt)
         working-directory: standalone
         run: |
-          tizen build-web -e "service/index.js" -e "service/injector.js" -e "service/bootstrap.js" -e "service/build-service.js" -e "service/package.json" -e "service/package-lock.json" -e "service/node_modules" -e "release"
-          rm -rf /tmp/wgt-build && mkdir -p /tmp/wgt-build
-          rsync -av --exclude='service/node_modules' --exclude='.buildResult' --exclude='release' ./ /tmp/wgt-build/
-          cd /tmp/wgt-build
-          tizen package -t wgt -s TizenTubeStandalone -- ./
-          cp *.wgt ${GITHUB_WORKSPACE}/standalone/release/TizenTubeOld.wgt
-          rm -rf /tmp/wgt-build
+          tizenjs build . -t wgt -o release/TizenTubeOld.wgt --author "${GITHUB_WORKSPACE}/TizenTube-author.p12" --authorPwd "${TIZEN_AUTHOR_PW}" -p public --ignore node_modules,/.*\.wgt$/,/userwidget/,/release/
 
-      - name: Upload TizenTubeSamsung package artifact
+      # Với MỖI file .wgt tizenjs vừa build (Cobalt / CobaltTizenTubeProxyAddress / Old) tạo ra 2 file xuất:
+      #   <tên>-unsigned.wgt : cùng nội dung, đã bỏ các file chữ ký
+      #   <tên>-signed.wgt   : ký lại bằng profile Tizen Studio (TizenTubeStandalone)
+      # File .wgt trung gian của tizenjs bị xoá, release chỉ còn các file -signed / -unsigned.
+      - name: Create unsigned and signed packages
+        working-directory: standalone/release
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+
+          cat > /tmp/strip_signature.py <<'PY'
+          import re, sys, zipfile
+          src, dst = sys.argv[1], sys.argv[2]
+          sig = re.compile(r'^(author-)?signature\d*\.xml$')
+          removed = []
+          with zipfile.ZipFile(src) as zin, zipfile.ZipFile(dst, 'w', zipfile.ZIP_DEFLATED) as zout:
+              for item in zin.infolist():
+                  if sig.match(item.filename):
+                      removed.append(item.filename)
+                      continue
+                  zout.writestr(item, zin.read(item.filename))
+          print('Removed signature files:', removed if removed else 'none')
+          PY
+
+          BASE_WGTS=(*.wgt)
+          if [ ${#BASE_WGTS[@]} -eq 0 ]; then
+            echo "::error::Không có file .wgt nào trong standalone/release!"
+            exit 1
+          fi
+
+          for BASE_WGT in "${BASE_WGTS[@]}"; do
+            NAME="${BASE_WGT%.wgt}"
+            UNSIGNED_WGT="${NAME}-unsigned.wgt"
+            SIGNED_WGT="${NAME}-signed.wgt"
+            WORK_DIR="/tmp/wgt-build-${NAME}"
+            echo "=== ${BASE_WGT} -> ${UNSIGNED_WGT} + ${SIGNED_WGT} ==="
+
+            # 1) Bản KHÔNG chữ ký: sao chép gói và loại bỏ file chữ ký ở thư mục gốc của wgt
+            python3 /tmp/strip_signature.py "$BASE_WGT" "$UNSIGNED_WGT"
+            # (đọc danh sách vào biến trước, vì `grep -q` thoát sớm sẽ làm `unzip | grep` fail khi bật pipefail)
+            UNSIGNED_LIST="$(unzip -Z1 "$UNSIGNED_WGT")"
+            if grep -Eq '^(author-)?signature[0-9]*\.xml$' <<< "$UNSIGNED_LIST"; then
+              echo "::error::${UNSIGNED_WGT} vẫn còn file chữ ký!"
+              exit 1
+            fi
+
+            # 2) Bản CÓ chữ ký: giải nén bản unsigned rồi đóng gói + ký bằng Tizen Studio
+            rm -rf "$WORK_DIR" && mkdir -p "$WORK_DIR"
+            unzip -q "$UNSIGNED_WGT" -d "$WORK_DIR"
+            (cd "$WORK_DIR" && tizen package -t wgt -s TizenTubeStandalone -- ./)
+            SIGNED_SRC="$(ls "$WORK_DIR"/*.wgt | head -n 1)"
+            cp "$SIGNED_SRC" "$SIGNED_WGT"
+            rm -rf "$WORK_DIR"
+
+            SIGNED_LIST="$(unzip -Z1 "$SIGNED_WGT")"
+            if ! grep -Eq '^author-signature\.xml$' <<< "$SIGNED_LIST"; then
+              echo "::error::${SIGNED_WGT} không có author-signature.xml!"
+              exit 1
+            fi
+
+            # Bỏ gói trung gian của tizenjs
+            rm -f "$BASE_WGT"
+          done
+
+          ls -la
+
+      - name: Upload TizenTube package (signed + unsigned)
         uses: actions/upload-artifact@v4
         with:
-          name: TizenTubeSamsung-Built
-          path: standalone/release/*
-          if-no-files-found: error
+            name: TizenTubeSamsung
+            path: standalone/release/*
+            if-no-files-found: error

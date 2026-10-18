@@ -1,7 +1,6 @@
 "use strict";
 
 const fs = require('fs');
-const path = require('path');
 const http = require('http');
 const ogHttps = require('https');
 const https = require('./https.js');
@@ -9,27 +8,15 @@ const net = require('net');
 const tls = require('tls');
 const forge = require('node-forge');
 const url = require('url');
+const { readUserScript, userScriptErrorSnippet } = require('./injector.js');
 
 const proxyPort = 8101;
 
-function startServer() {
-    // Tự động quét tìm userScript.js cục bộ phục vụ MITM proxy
-    let userScriptContent = '';
-    const possiblePathsProxy = [
-        path.join(__dirname, '../scripts/userScript.js'),          // Từ service/utils/ ra service/scripts/
-        path.join(__dirname, '../../service/scripts/userScript.js'), // Từ standalone/service/utils/
-        path.join(__dirname, '../../../service/scripts/userScript.js'),
-        path.join(__dirname, 'scripts/userScript.js')
-    ];
-    for (const p of possiblePathsProxy) {
-        try {
-            if (fs.existsSync(p)) {
-                userScriptContent = fs.readFileSync(p, 'utf8');
-                break;
-            }
-        } catch (e) {}
-    }
+// userScript.js is shipped inside the .wgt. The page can't read it directly, so this
+// MITM proxy answers this (virtual, same-origin) URL itself instead of going to YouTube.
+const LOCAL_USERSCRIPT_PATH = '/__tizentube/userScript.js';
 
+function startServer() {
     const caCertificate = forge.pki.certificateFromPem(
         fs.readFileSync('/home/owner/share/tizentube-ca.crt', 'utf8')
     );
@@ -101,6 +88,28 @@ function startServer() {
     const ytCertWWW = createHostCertificate('www.youtube.com');
     const ytCert = createHostCertificate('youtube.com');
 
+    function serveLocalUserScript(response) {
+        let code;
+        try {
+            code = readUserScript();
+        } catch (error) {
+            // HTTP 200 on purpose, so the page still runs the alert that explains the problem.
+            code = userScriptErrorSnippet(error);
+        }
+
+        const body = Buffer.from(code, 'utf8');
+
+        response.writeHead(200, {
+            'content-type': 'application/javascript; charset=utf-8',
+            'content-length': body.length,
+            'cache-control': 'no-store',
+            'access-control-allow-origin': '*',
+            'connection': 'close'
+        });
+
+        response.end(body);
+    }
+
     function mitm(hostname, port, clientSocket, initialData) {
         clientSocket.write(
             'HTTP/1.1 200 Connection Established\r\n\r\n'
@@ -113,6 +122,10 @@ function startServer() {
         tlsServer.on('secureConnection', clientTlsSocket => {
             const httpServer = http.createServer(
                 (request, response) => {
+                    if (request.method === 'GET' && request.url.split('?')[0] === LOCAL_USERSCRIPT_PATH) {
+                        return serveLocalUserScript(response);
+                    }
+
                     const isTvPath =
                         request.url === '/tv' ||
                         request.url.startsWith('/tv?');
@@ -173,9 +186,8 @@ function startServer() {
                                 ''
                             );
 
-                            // Bơm trực tiếp userScript local tuyệt đối, không dùng CDN
-                            const scriptTag = userScriptContent ? `<script>${userScriptContent}</script>` : '';
-                            body = body.replace('</body>', `${scriptTag}</body>`);
+                            // Root-relative URL: same origin as the page, answered by this proxy (see LOCAL_USERSCRIPT_PATH)
+                            body = body.replace('</body>', `<script src="${LOCAL_USERSCRIPT_PATH}?ver=${Date.now()}"></script></body>`);
 
                             headers['content-length'] = Buffer.byteLength(body, 'utf8');
                             headers['connection'] = 'close';

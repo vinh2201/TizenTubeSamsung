@@ -45,7 +45,7 @@
                 "options": {
                     "endScreenCards": "Скрыть карточки в конце видео",
                     "youThereRenderer": "Включить сообщение «Вы ещё смотрите?»",
-                    "paidPromoOverlay": "Включить уведомление «Содержит рекламу»",
+                    "paidPromoOverlay": "Включить сообщение «Содержит рекламу»",
                     "whosWatching": {
                         "title": "Меню «Кто смотрит?»",
                         "options": {
@@ -68,7 +68,8 @@
                 "title": "Субтитры",
                 "options": {
                     "showLocalSubtitle": "Показывать локальные субтитры",
-                    "showHiddenSubtitles": "Показывать скрытые субтитры"
+                    "showHiddenSubtitles": "Показывать скрытые субтитры",
+                    "persistCaptionStyle": "Запоминать стиль субтитров"
                 }
             },
             "videoPlayer": {
@@ -155,7 +156,7 @@
                             "enableClock": "Включить часы",
                             "isClock12HourFormat": "12-часовой формат",
                             "clockShowSeconds": "Показывать секунды",
-                            "clockHideWhenVideoPlaying": "Скрывать часы во время воспроизведения"
+                            "clockHideWhenVideoPlaying": "Скрыть часы при просмотре"
                         }
                     },
                     "categories": {
@@ -290,7 +291,20 @@
             "button": "Поделиться",
             "qrCodeScanMessage": "Отсканируйте QR-код ниже, чтобы поделиться этим видео."
         },
-        "screenOff": "Выключить экран"
+        "screenOff": "Выключить экран",
+        "chapters": {
+            "title": "Главы",
+            "enterNudge": "Чтобы посмотреть главы, нажмите стрелку вверх",
+            "navNudge": "Переключение между главами",
+            "navNudgeA11y": "Нажимайте стрелки влево или вправо для перехода между главами"
+        },
+        "queue": {
+            "title": "Видео в очереди",
+            "clear": "Очистить очередь"
+        },
+        "subtitles": {
+            "otherLanguages": "Другие языки"
+        }
     },
     "toasts": {
         "videoAddedToQueue": "Видео добавлено в очередь.",
@@ -299,10 +313,20 @@
             "title": "Боковое меню обновлено",
             "subtitle": "Содержимое бокового меню обновлено."
         },
-        "feedbackSent": "Feedback sent."
+        "feedbackSent": "Отзыв отправлен."
     },
     "videoMenu": {
-        "notInterested": "Not interested",
-        "dontRecommendChannel": "Don't recommend channel"
+        "notInterested": "Неинтересно",
+        "dontRecommendChannel": "Не рекомендовать канал",
+        "play": "Воспроизвести",
+        "saveToWatchLater": "Смотреть позже",
+        "removeFromWatchLater": "Убрать из Смотреть позже",
+        "saveToPlaylist": "Добавить в плейлист",
+        "addToQueue": "Добавить в очередь",
+        "goToChannel": "Перейти на канал",
+        "videoOptions": "Настройки видео"
+    },
+    "common": {
+        "back": "Назад"
     }
 }

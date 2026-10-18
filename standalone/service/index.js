@@ -10,29 +10,7 @@ const cobaltSetup = require('./utils/cobaltSetup.js');
 const startServer = require('./utils/cobaltProxyServer.js');
 const URL = require('url');
 const path = require('path');
-const fs = require('fs');
 const injector = require('./utils/injector.js');
-
-// Tự động quét tìm userScript.js cục bộ chuẩn xác theo cấu trúc WGT
-let userScriptContent = '';
-const possiblePathsIndex = [
-    path.join(__dirname, 'scripts/userScript.js'),          // Khi đóng gói trong WGT (service/scripts/userScript.js)
-    path.join(__dirname, '../service/scripts/userScript.js'),  // Từ standalone/service
-    path.join(__dirname, '../../service/scripts/userScript.js'), // Từ root repo xuống
-    path.join(__dirname, '../../../service/scripts/userScript.js')
-];
-for (const p of possiblePathsIndex) {
-    try {
-        if (fs.existsSync(p)) {
-            userScriptContent = fs.readFileSync(p, 'utf8');
-            break;
-        }
-    } catch (e) {}
-}
-
-if (!userScriptContent) {
-    console.error('⚠️ Cảnh báo nghiêm trọng: Không tìm thấy file userScript.js cục bộ!');
-}
 
 app.use((req, res, next) => {
     res.setHeader('Access-Control-Allow-Origin', '*');
@@ -48,6 +26,21 @@ app.get('/tizentube/getState', (req, res) => {
     injector.canConnectToDaemon().then(r => {
         res.json(r);
     });
+});
+
+// Serves userScript.js that is bundled inside the .wgt (replaces the jsDelivr CDN).
+// Same origin as the proxied page (http://localhost:PORT), so no CSP / CORS / mixed-content issue.
+app.get('/tizentube/userScript.js', (req, res) => {
+    res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
+    res.setHeader('Cache-Control', 'no-store');
+    try {
+        res.status(200).send(injector.readUserScript());
+    } catch (e) {
+        console.error('TizenTube: failed to load local userScript.js: ' + e.message);
+        // HTTP 200 on purpose: the browser would not run a <script src> that answered with an error status,
+        // and we want the alert that explains the problem to show up.
+        res.status(200).send(injector.userScriptErrorSnippet(e));
+    }
 });
 
 app.get('/tizentube/debugger', (req, res) => {
@@ -122,7 +115,7 @@ app.all('*', (req, res) => {
             for (const key in headerKeys) {
                 if (Object.prototype.hasOwnProperty.call(headerKeys, key)) {
                     const lowerKey = key.toLowerCase();
-                    const skipHeaders = ['content-encoding', 'content-length', 'transfer-encoding', 'content-security-policy', 'alt-svc'];
+                    const skipHeaders = ['content-encoding', 'content-length', 'transfer-encoding', 'content-security-policy', 'content-security-policy-report-only', 'x-content-security-policy', 'x-webkit-csp', 'alt-svc'];
                     if (isCorsBypass) skipHeaders.push('access-control-allow-origin');
 
                     if (skipHeaders.indexOf(lowerKey) !== -1) continue;
@@ -161,10 +154,13 @@ app.all('*', (req, res) => {
 
                 return response.text().then((text) => {
                     if (req.url.indexOf('/tv') === 0 && req.url.indexOf('/tv_config') === -1) {
-                        // Nhúng trực tiếp nội dung userScript cục bộ, loại bỏ hoàn toàn CDN
-                        if (userScriptContent) {
-                            text += `<script>${userScriptContent}</script>`;
-                        }
+                        // Insert the userscript for TizenTube (served locally from the .wgt)
+                        text += `<script src="http://localhost:${PORT}/tizentube/userScript.js?ver=${Date.now()}"></script>`;
+                    }
+
+                    // Drop CSP declared inside the HTML itself (the CSP *headers* are already skipped above)
+                    if (contentType.indexOf('text/html') !== -1) {
+                        text = text.replace(/<meta[^>]+http-equiv\s*=\s*["']?content-security-policy(?:-report-only)?["']?[^>]*>/gi, '');
                     }
 
                     const proxyPrefix = `http://localhost:${PORT}/cors-bypass/`;
@@ -186,8 +182,8 @@ app.all('*', (req, res) => {
                     text = text.replace(/"\/\/clients1\.google\.com/g, `"${proxyPrefix}https://clients1.google.com`);
 
                     text = text.replace('Set(["www.youtube.com","accounts.google.com"]);', 'Set(["www.youtube.com", "accounts.google.com", "localhost"]);');
-                    text = text.replace(/:document\.location\.toString\(\)/g, ':document.location.toString().replace("http://localhost:${PORT}", "https://www.youtube.com")');
-                    text = text.replace(/euri:[^,]+,/g, 'euri:document.location.toString().replace("http://localhost:${PORT}", "https://www.youtube.com"),')
+                    text = text.replace(/:document\.location\.toString\(\)/g, `:document.location.toString().replace("http://localhost:${PORT}", "https://www.youtube.com")`);
+                    text = text.replace(/euri:[^,]+,/g, `euri:document.location.toString().replace("http://localhost:${PORT}", "https://www.youtube.com"),`)
                     text = text.replace(/https:\/\/s\.youtube\.com/g, `${proxyPrefix}https://s.youtube.com`);
                     text = text.replace(/redirector.googlevideo.com/g, `${proxyPrefix}https://redirector.googlevideo.com`);
                     text = text.replace(/this.scheme="https"/, 'this.scheme="http"');
@@ -196,8 +192,8 @@ app.all('*', (req, res) => {
                     text = text.replace(/"\/\/yt3\.googleusercontent\.com/g, `"${proxyPrefix}https://yt3.googleusercontent.com`);
 
                     // In order to fix history not working
-                    text = text.replace(/=window\.location\.href;/, '=window.location.href.replace("http://localhost:${PORT}", "https://www.youtube.com");')
-                    text = text.replace(/=document\.location\.href/, '=document.location.href.replace("http://localhost:${PORT}", "https://www.youtube.com")')
+                    text = text.replace(/=window\.location\.href;/, `=window.location.href.replace("http://localhost:${PORT}", "https://www.youtube.com");`)
+                    text = text.replace(/=document\.location\.href/, `=document.location.href.replace("http://localhost:${PORT}", "https://www.youtube.com")`)
 
                     res.send(text);
                 });
