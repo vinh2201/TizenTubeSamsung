@@ -97,17 +97,15 @@ function startServer() {
             code = userScriptErrorSnippet(error);
         }
 
-        const body = Buffer.from(code, 'utf8');
-
         response.writeHead(200, {
             'content-type': 'application/javascript; charset=utf-8',
-            'content-length': body.length,
+            'content-length': Buffer.byteLength(code, 'utf8'),
             'cache-control': 'no-store',
             'access-control-allow-origin': '*',
             'connection': 'close'
         });
 
-        response.end(body);
+        response.end(code, 'utf8');
     }
 
     function mitm(hostname, port, clientSocket, initialData) {

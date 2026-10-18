@@ -38,7 +38,8 @@ const USERSCRIPT_MAX_LEVELS_UP = 5;
 
 function getUserScriptStartDirs() {
     const starts = [];
-    [__dirname, process.cwd()].forEach(dir => {
+    [__dirname, process.cwd(), process.argv[1] ? path.dirname(process.argv[1]) : null].forEach(dir => {
+        if (!dir) return;
         const full = path.resolve(dir);
         if (starts.indexOf(full) === -1) starts.push(full);
     });
@@ -82,7 +83,7 @@ function readUserScript() {
         throw new Error('userScript.js not found. Looked for ' + USERSCRIPT_SUBPATHS.join(', ') +
             ' (up to ' + USERSCRIPT_MAX_LEVELS_UP + ' levels up) starting from:\n' + getUserScriptStartDirs().join('\n'));
     }
-    const mtime = fs.statSync(filePath).mtimeMs;
+    const mtime = fs.statSync(filePath).mtime.getTime();
     if (!userScriptCache || userScriptCache.path !== filePath || userScriptCache.mtime !== mtime) {
         userScriptCache = { path: filePath, mtime: mtime, code: fs.readFileSync(filePath, 'utf8') };
     }
