@@ -1,3 +1,6 @@
+// This page is served by the proxy in standalone/service (index.js), so wherever it was loaded from is where the
+// proxy listens. Naming the port here as well let the two disagree (8099 against 8100) and sent every request to
+// a port nobody listened on.
 function redirectUrl(originalUrl) {
     if (!originalUrl) return originalUrl;
 
@@ -8,7 +11,7 @@ function redirectUrl(originalUrl) {
 
         if (hostname === 'youtube.com' || hostname === 'www.youtube.com') {
             url.protocol = 'http:';
-            url.host = 'localhost:8100';
+            url.host = window.location.host;
             return url.toString();
         }
 
@@ -16,7 +19,7 @@ function redirectUrl(originalUrl) {
             || hostname.endsWith('gstatic.com') || hostname.endsWith('.google.com')
             || hostname.endsWith('.googleapis.com') || hostname.endsWith('googleusercontent.com')
             || hostname.endsWith('.ggpht.com')) {
-            return 'http://localhost:8100/cors-bypass/' + url.toString();
+            return 'http://' + window.location.host + '/cors-bypass/' + url.toString();
         }
     } catch (e) {
         console.error('Failed to parse URL during interception:', e);

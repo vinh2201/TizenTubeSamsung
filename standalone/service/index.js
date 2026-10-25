@@ -11,6 +11,8 @@ const startServer = require('./utils/cobaltProxyServer.js');
 const URL = require('url');
 const path = require('path');
 const injector = require('./utils/injector.js');
+const keepListening = require('./utils/keepListening.js');
+const http = require('http');
 
 app.use((req, res, next) => {
     res.setHeader('Access-Control-Allow-Origin', '*');
@@ -214,7 +216,7 @@ app.all('*', (req, res) => {
         });
 });
 
-app.listen(PORT, '127.0.0.1');
+keepListening('TizenTube proxy', http.createServer(app), (server) => server.listen(PORT, '127.0.0.1'));
 
 
 if (cobaltSetup()) {

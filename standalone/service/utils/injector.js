@@ -97,7 +97,20 @@ function userScriptErrorSnippet(err) {
     return '(function(){var m=' + JSON.stringify(msg) + ';try{console.error(m);}catch(e){}try{if(typeof alert==="function")alert(m);}catch(e){}})();';
 }
 
-function connectToDebugger(host, port, args) {
+const RETRY_EVERY = 100;
+const CHECK_ADDRESS_EVERY = 10;
+const DAEMON_RETRY_EVERY = 500;
+
+// The address the daemon reports for the set right now, or null when it cannot be read.
+function currentAddress() {
+    return fetch('http://127.0.0.1:8001/api/v2/').then(res => res.json())
+        .then(json => (json.device && json.device.ip) || null)
+        .catch(() => null);
+}
+
+function connectToDebugger(host, port, args, tries) {
+    tries = tries || 0;
+
     fetch(`http://${host}:${port}`).then(_ => {
         CDP({ host, port, local: true }, client => {
             isConnecting = false;
@@ -123,7 +136,16 @@ function connectToDebugger(host, port, args) {
             client.Page.navigate({ url: `https://youtube.com/tv?additionalDataUrl=http%3A%2F%2Flocalhost%3A8085%2Fdial%2Fapps%2FYouTube${args ? `&${args}` : ''}` });
         })
     }).catch(e => {
-        return setTimeout(() => connectToDebugger(host, port, args), 100);
+        // The address was read when the debugger was started. If the set was given another one since (a new lease),
+        // knocking on the old one would never end, so every so often the current address is asked for again.
+        const asking = (tries + 1) % CHECK_ADDRESS_EVERY === 0 ? currentAddress() : Promise.resolve(null);
+
+        return asking.then(now => {
+            const next = now && now !== host ? now : host;
+            if (next !== host) console.log(`TizenTube: the address of this set changed (${host} -> ${next}), following it.`);
+
+            return setTimeout(() => connectToDebugger(next, port, args, tries + 1), RETRY_EVERY);
+        });
     })
 }
 
@@ -132,7 +154,8 @@ function canConnectToDaemon() {
         .then(json => {
             return { canConnectToDaemon: (json.device.developerIP === '127.0.0.1' || json.device.developerIP === '1.0.0.127') && json.device.developerMode === '1', ip: json.device.ip, isConnecting }
         }).catch(e => {
-            return canConnectToDaemon();
+            // Not at once: while the network is being renegotiated this used to spin.
+            return new Promise(resolve => setTimeout(resolve, DAEMON_RETRY_EVERY)).then(canConnectToDaemon);
         });
 }
 
@@ -161,6 +184,7 @@ function startDebugger(args) {
 
 module.exports = {
     startDebugger,
+    connectToDebugger,
     canConnectToDaemon,
     readUserScript,
     userScriptErrorSnippet,

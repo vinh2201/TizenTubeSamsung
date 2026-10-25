@@ -9,6 +9,7 @@ const tls = require('tls');
 const forge = require('node-forge');
 const url = require('url');
 const { readUserScript, userScriptErrorSnippet } = require('./injector.js');
+const keepListening = require('./keepListening.js');
 
 const proxyPort = 8101;
 
@@ -266,7 +267,15 @@ function startServer() {
         );
     });
 
-    proxyServer.listen(proxyPort, '0.0.0.0');
+    // The wildcard is refused when another app holds the port on one address only (127.0.0.1, say). The Cobalt
+    // build reaches us on 127.0.0.2, which that app does not hold, so the next try asks for that address alone.
+    const proxyHosts = ['0.0.0.0', '127.0.0.2'];
+    let proxyAttempt = 0;
+
+    keepListening('TizenTube Cobalt proxy', proxyServer, (server) => {
+        server.listen(proxyPort, proxyHosts[proxyAttempt % proxyHosts.length]);
+        proxyAttempt += 1;
+    });
 }
 
 module.exports = startServer;
